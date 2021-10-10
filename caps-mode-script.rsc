@@ -1,14 +1,6 @@
-#-------------------------------------------------------------------------------
-# Note: script will not execute at all (will throw a syntax error) if
-#       dhcp or wireless-fp packages are not installed
-#-------------------------------------------------------------------------------
 
-#| CAP configuration
-#|
-#|   Wireless interfaces are set to be managed by CAPsMAN.
-#|   All ethernet interfaces and CAPsMAN managed interfaces are bridged.
+#
 
-# bridge port name
 :global brName  "bridgeLocal";
 :global logPref "defconf:";
 :global structVLAN {
@@ -50,12 +42,33 @@
 :global bridgeIn [/interface bridge find name=$brName]; # get bridge interface
 :global arrayIn {$bridgeIn;$firstIn};
 
+:global inListEth [/interface ethernet find default-name~"ether" and .id!=$firstIn and .id!=$lastIn];
+#:local bFi 1;
+#for i from=1 to=([:len [/interface ethernet find default-name~"ether"]]-2) do={
+#  if ($bFi = 1) do={
+#    :set inListEth [/interface ethernet find name=[get $i name]];
+#    :set bFi 0;
+#  } else={
+#    :set inListEth "$inListEth,$[/interface ethernet find name=[get $i name]]";
+#  }
+#}
+
 :foreach iname,data in=$structVLAN do={
   if ($iname="WiFi") do={
-    /interface bridge vlan add bridge=$bridgeIn vlan-ids=($data->"vid") tagged=$firstIn comment=($data->"comment");
-  } else={
-      /interface bridge vlan add bridge=$bridgeIn vlan-ids=($data->"vid") tagged=$arrayIn comment=($data->"comment");
-      /interface vlan add interface=$bridgeIn vlan-id=($data->"vid") name=$iname comment=($data->"comment");
+    /interface bridge vlan add bridge=$bridgeIn vlan-ids=($data->"vid") tagged=$firstIn untagged=$inListEth comment=($data->"comment");
+    :foreach i in=$inListEth do={
+      /interface bridge port set [find interface=[/interface ethernet get $i name]] ingress-filtering=yes frame-types=admit-only-untagged-and-priority-tagged pvid=($data->"vid");
+    } 
+  } 
+  if ($iname="MGMT") do={
+    /interface bridge vlan add bridge=$bridgeIn vlan-ids=($data->"vid") tagged=$arrayIn untagged=$lastIn comment=($data->"comment");
+    /interface vlan add interface=$bridgeIn vlan-id=($data->"vid") name=$iname comment=($data->"comment");
+    /interface bridge port set [find interface=[/interface ethernet get $lastIn name]] ingress-filtering=yes frame-types=admit-only-untagged-and-priority-tagged pvid=($data->"vid");
+  }
+  if ($iname="CAPs") do={
+    /interface bridge vlan add bridge=$bridgeIn vlan-ids=($data->"vid") tagged=$arrayIn comment=($data->"comment");
+    /interface vlan add interface=$bridgeIn vlan-id=($data->"vid") name=$iname comment=($data->"comment");
+    /interface bridge port set [find interface=[/interface ethernet get $firstIn name]] ingress-filtering=yes frame-types=admit-only-vlan-tagged;
   }
 }
 
@@ -64,6 +77,7 @@
 do {
   /interface list add name=$mgmtList;
   /interface list member add list=$mgmtList interface="MGMT";
+  /interface list member add list=$mgmtList interface=$lastIn;
   /ip neighbor discovery-settings set discover-interface-list=$mgmtList;
 }
 
@@ -94,5 +108,5 @@ do {
 :global capsName [/interface vlan find name="CAPs"];
 :do {
   /interface wireless cap
-    set enabled=yes interfaces=$interfacesList discovery-interfaces=$brName bridge=$brName
+    set enabled=yes interfaces=$interfacesList discovery-interfaces=$capsName bridge=$brName
 } on-error={ :log warning "$logPref unable to configure caps";}
