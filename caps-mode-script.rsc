@@ -1,89 +1,80 @@
-
 #
-
 :global brName  "bridgeLocal";
 :global logPref "defconf:";
+:global mgmtListName "MGMT_List"
 :global structVLAN {
-  "MGMT"={name="MGMT";vid=99;comment="MGMT"};
-  "CAPs"={name="CAPs";vid=200;comment="CAPs discovery VLAN"};
-  "WiFi"={name="WiFi";vid=100;comment="WiFi VLAN"}
+  "MGMT"={name="MGMT";vid=99;comment="MGMT VLAN 99"};
+  "CAPs"={name="CAPs";vid=200;comment="CAPs discovery VLAN 200"};
+  "WiFi"={name="WiFi";vid=100;comment="WiFi VLAN 100"}
 };
-
-:log info $action
-
+:global mgmtIntrface "";
+:global capsInterface "";
+:global bridgeInterface "";
+:global arrayWiFiInterface "";
+:global mgmtList "";
 
 # wait for ethernet interfaces
-:local count 0;
+:global count 0;
 :while ([/interface ethernet find] = "") do={
   :if ($count = 30) do={
     :log warning "DefConf: Unable to find ethernet interfaces";
     /quit;
   }
-  :delay 1s; :set count ($count + 1);
+  :delay 1s; 
+  :set count ($count + 1);
 }
 
-:local macSet 0;
-:local tmpMac "";
-
+:global macSet 0;
+:global tmpMac "";
 :foreach k in=[/interface ethernet find] do={
   # first ethernet is found; add bridge and set mac address of the ethernet port
   :if ($macSet = 0) do={
     :set tmpMac [/interface ethernet get $k mac-address];
-    /interface bridge add name=$brName auto-mac=no admin-mac=$tmpMac vlan-filtering=yes comment="defconf";
+    :set bridgeInterface [/interface bridge add name=$brName auto-mac=no admin-mac=$tmpMac vlan-filtering=yes frame-types=admit-only-vlan-tagged ingress-filtering=yes comment="defconf"]; # get reference to bridge interface
     :set macSet 1;
   }
   # add bridge ports
-  /interface bridge port add bridge=$brName interface=$k comment="defconf"
+  /interface bridge port add bridge=$bridgeInterface interface=$k comment="defconf" 
 }
- 
   
-:global firstIn [/interface ethernet find default-name="ether1"]; # get first ethernet interface 
-:global lastIn ([interface ethernet find]->([:len [/interface ethernet find default-name~"ether"]]-1)); # get last ethernet interface
-:global bridgeIn [/interface bridge find name=$brName]; # get bridge interface
-:global arrayIn {$bridgeIn;$firstIn};
-
-:global inListEth [/interface ethernet find default-name~"ether" and .id!=$firstIn and .id!=$lastIn];
-#:local bFi 1;
-#for i from=1 to=([:len [/interface ethernet find default-name~"ether"]]-2) do={
-#  if ($bFi = 1) do={
-#    :set inListEth [/interface ethernet find name=[get $i name]];
-#    :set bFi 0;
-#  } else={
-#    :set inListEth "$inListEth,$[/interface ethernet find name=[get $i name]]";
-#  }
-#}
+:global firstEthInterface [/interface ethernet find default-name="ether1"]; # get reference first ethernet interface 
+:global lastEthInterface ([interface ethernet find]->([:len [/interface ethernet find]]-1)); # get reference last ethernet interface
+:global arrayTagInterface {$bridgeInterface;$firstEthInterface}; # make array tagget VLAN interface
+:global arrayUnTagInterface [/interface ethernet find default-name~"ether" and .id!=$firstEthInterface and .id!=$lastEthInterface]; # get array ethernet interface exclude fist & last ethernet interface 
 
 :foreach iname,data in=$structVLAN do={
   if ($iname="WiFi") do={
-    /interface bridge vlan add bridge=$bridgeIn vlan-ids=($data->"vid") tagged=$firstIn untagged=$inListEth comment=($data->"comment");
-    :foreach i in=$inListEth do={
+    /interface bridge vlan add bridge=$bridgeInterface vlan-ids=($data->"vid") tagged=$firstEthInterface untagged=$arrayUnTagInterface comment=($data->"comment");
+    :foreach i in=$arrayUnTagInterface do={
       /interface bridge port set [find interface=[/interface ethernet get $i name]] ingress-filtering=yes frame-types=admit-only-untagged-and-priority-tagged pvid=($data->"vid");
     } 
   } 
   if ($iname="MGMT") do={
-    /interface bridge vlan add bridge=$bridgeIn vlan-ids=($data->"vid") tagged=$arrayIn untagged=$lastIn comment=($data->"comment");
-    /interface vlan add interface=$bridgeIn vlan-id=($data->"vid") name=$iname comment=($data->"comment");
-    /interface bridge port set [find interface=[/interface ethernet get $lastIn name]] ingress-filtering=yes frame-types=admit-only-untagged-and-priority-tagged pvid=($data->"vid");
+    /interface bridge vlan add bridge=$bridgeInterface vlan-ids=($data->"vid") tagged=$arrayTagInterface untagged=$lastEthInterface comment=($data->"comment");
+    :set mgmtIntrface [/interface vlan add interface=$bridgeInterface vlan-id=($data->"vid") name=$iname comment=($data->"comment")]; # get reference management interface
+    #/ip address add interface=$mgmtIntrface address=[:toip ($data->"ipAddr")] netmask=[:toip ($data->"netMask")] comment=($data->"comment"); # set ip addresses to management interface
+    /interface bridge port set [find interface=[/interface ethernet get $lastEthInterface name]] ingress-filtering=yes frame-types=admit-only-untagged-and-priority-tagged pvid=($data->"vid");
   }
   if ($iname="CAPs") do={
-    /interface bridge vlan add bridge=$bridgeIn vlan-ids=($data->"vid") tagged=$arrayIn comment=($data->"comment");
-    /interface vlan add interface=$bridgeIn vlan-id=($data->"vid") name=$iname comment=($data->"comment");
-    /interface bridge port set [find interface=[/interface ethernet get $firstIn name]] ingress-filtering=yes frame-types=admit-only-vlan-tagged;
+    /interface bridge vlan add bridge=$bridgeInterface vlan-ids=($data->"vid") tagged=$arrayTagInterface comment=($data->"comment");
+    :set capsInterface [/interface vlan add interface=$bridgeInterface vlan-id=($data->"vid") name=$iname comment=($data->"comment")]; # get reference CAPsMAN discovery interface
+    /interface bridge port set [find interface=[/interface ethernet get $firstEthInterface name]] ingress-filtering=yes frame-types=admit-only-vlan-tagged;
   }
 }
 
 
-:global mgmtList "mgmt_list"
 do {
-  /interface list add name=$mgmtList;
-  /interface list member add list=$mgmtList interface="MGMT";
-  /interface list member add list=$mgmtList interface=$lastIn;
+  :set mgmtList [/interface list add name=$mgmtListName];
+  /interface list member add list=$mgmtList interface=$mgmtIntrface;
+  /interface list member add list=$mgmtList interface=$lastEthInterface;
   /ip neighbor discovery-settings set discover-interface-list=$mgmtList;
+  /tool mac-server set allowed-interface-list=$mgmtList;
+  /tool mac-server mac-winbox set allowed-interface-list=$mgmtList;
 }
 
-# try to configure caps (may fail if for example specified interfaces are missing)
-:local interfacesList "";
-:local bFirst 1;
+do {
+  /tool romon set enabled=yes
+} on-error={ :log warning "$logPref unable to configure romon";}
 
 # wait for wireless interfaces
 :while ([/interface wireless find] = "") do={
@@ -91,22 +82,14 @@ do {
     :log warning "DefConf: Unable to find wireless interfaces";
     /quit;
   }
-  :delay 1s; :set count ($count + 1);
+  :delay 1s; 
+  :set count ($count + 1);
 }
 
 # delay just to make sure that all wireless interfaces are loaded
-:delay 5s;
-:foreach i in=[/interface wireless find] do={
-  if ($bFirst = 1) do={
-    :set interfacesList [/interface wireless get $i name];
-    :set bFirst 0;
-  } else={
-    :set interfacesList "$interfacesList,$[/interface wireless get $i name]";
-  }
-}
+#:delay 5s;
+:set arrayWiFiInterface [/interface wireless find];
 
-:global capsName [/interface vlan find name="CAPs"];
 :do {
-  /interface wireless cap
-    set enabled=yes interfaces=$interfacesList discovery-interfaces=$capsName bridge=$brName
+  /interface wireless cap set enabled=yes interfaces=$arrayWiFiInterface discovery-interfaces=$capsInterface bridge=$bridgeInterface
 } on-error={ :log warning "$logPref unable to configure caps";}
