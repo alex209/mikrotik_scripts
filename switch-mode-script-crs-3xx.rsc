@@ -88,6 +88,7 @@ do {
   /ip neighbor discovery-settings set discover-interface-list=$mgmtList;
   /tool mac-server set allowed-interface-list=$mgmtList;
   /tool mac-server mac-winbox set allowed-interface-list=$mgmtList;
+  /tool romon set enabled=yes;
 }
 
 do {

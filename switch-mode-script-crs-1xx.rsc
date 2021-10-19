@@ -84,7 +84,7 @@ do {/interface ethernet switch set drop-if-invalid-or-src-port-not-member-of-vla
     /interface ethernet switch egress-vlan-tag add tagged-ports=$strTagInterface vlan-id=($data->"vid") comment=($data->"comment");
     /interface ethernet switch ingress-vlan-translation add ports=$lastEthInterface customer-vid=0 new-customer-vid=($data->"vid") comment=($data->"comment");
   } else={
-    /interface ethernet switch vlan add ports=$tagInterface vlan-id=($data->"vid") comment=($data->"comment");
+    /interface ethernet switch vlan add ports=$arrayAllPort vlan-id=($data->"vid") comment=($data->"comment");
     /interface ethernet switch egress-vlan-tag add tagged-ports=$tagInterface vlan-id=($data->"vid") comment=($data->"comment");
     #/interface ethernet switch ingress-vlan-translation add ports=$arrayUnTagInterface customer-vid=0 new-customer-vid=($data->"vid") comment=($data->"comment") disabled=yes;
   }
@@ -97,6 +97,7 @@ do {
   /ip neighbor discovery-settings set discover-interface-list=$mgmtList;
   /tool mac-server set allowed-interface-list=$mgmtList;
   /tool mac-server mac-winbox set allowed-interface-list=$mgmtList;
+  /tool romon set enabled=yes;
 }
 
 do {
