@@ -31,6 +31,7 @@
   :if ($macSet = 0) do={
     :set tmpMac [/interface ethernet get $k mac-address];
     :set bridgeInterface [/interface bridge add name=$brName auto-mac=no admin-mac=$tmpMac vlan-filtering=yes frame-types=admit-only-vlan-tagged ingress-filtering=yes comment="defconf"]; # get reference to bridge interface
+    #:set bridgeInterface [/interface bridge add name=$brName auto-mac=no admin-mac=$tmpMac vlan-filtering=yes comment="defconf"]; # get reference to bridge interface
     :set macSet 1;
   }
   # add bridge ports
